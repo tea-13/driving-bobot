@@ -6,7 +6,6 @@ import numpy as np
 import time
 
 
-
 @dataclass
 class LidarData:
 	"""LidarDate: The class responsible for storing data samples from the lidar"""
@@ -20,7 +19,6 @@ class LidarData:
 	def update(self, _distance: int, _speed: int):
 		self.distance = _distance
 		self.speed = _speed
-
 
 
 class LidarDataList:
@@ -67,7 +65,7 @@ class LidarDataList:
 		self.data[_ang].clear()
 
 
-
+# Его надо синглтоном сделать!
 class Lidar:
 	"""Lidar: The class responsible for connecting to the lidar"""
 	def __init__(self, _port : str, _baudrate : int):
@@ -120,7 +118,6 @@ class Lidar:
 		self.data.clear()
 
 
-
 class Visualization:
 	"""Visualization: lidar data visualization class"""
 	def __init__(self):
@@ -138,7 +135,6 @@ class Visualization:
 		self.ax.set_rmax(self.MAX_DISTANCE)
 		plt.draw()
 		plt.pause(0.001)
-
 
 
 def choice_port() -> str:
@@ -168,4 +164,4 @@ if __name__ == '__main__':
 			vis.plot_lidar_data(lidar.data.data_mean)
 			# lidar.clear_data()
 		except KeyboardInterrupt:
-			exit('Exit')
+			exit('Exit: ctrl + C')
