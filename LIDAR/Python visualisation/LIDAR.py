@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from serial.tools import list_ports
-import serial
-import matplotlib.pyplot as plt
-import numpy as np
 import time
+
+import serial
+import numpy as np
 
 
 @dataclass
@@ -13,9 +12,11 @@ class LidarData:
 	distance: int
 	speed: int
 
+	
 	def __str__(self) -> str:
 		return f'angle: {self.angle}, distance: {self.distance}, speed: {self.speed}.'
 
+	
 	def update(self, _distance: int, _speed: int):
 		self.distance = _distance
 		self.speed = _speed
@@ -25,9 +26,18 @@ class LidarDataList:
 	"""LidarDataList: ..."""
 	def __init__(self):
 		self.MAX_DATA_SIZE = 360    # resolution : 1 degree
-		self.data_mean = [LidarData(ang, 0, 0) for ang in range(360)]
+		self.filtering_data = [LidarData(ang, 0, 0) for ang in range(360)]
 		self.data = {ang : [] for ang in range(360)}
 
+		# Data for filtering
+		# Moving average
+		self.N = 4
+		self.alpha = 2 / (self.N+1)
+		# Kalman
+		var_data = 0.25
+		reaction_speed = 0.05
+
+	
 	def parse(self, _sensor_data: list) -> None:
 		try:
 			sensor_data = list(map(int, _sensor_data))
@@ -38,14 +48,19 @@ class LidarDataList:
 			for i, dist in enumerate(sensor_data[2:6]):
 				ang = (current_angle + i) % self.MAX_DATA_SIZE
 				self.data[ang].append([dist, current_speed])
-				self.filter(ang)
+				# self.median_filter(ang)
+				self.moving_average_filter(ang)
+				# self.kalman_filter(ang)
+				# self.none_filter(ang)
+
 
 		except Exception as e:
 			print(f'Error during parse data: {e}')
 			print(f'Parse data: {_sensor_data}]')
 
 
-	def filter(self, _ang: int) -> None:
+	
+	def median_filter(self, _ang: int) -> None:
 		if len(self.data[_ang]) == 3:
 			sample_distances =	[]
 			sample_speeds = []
@@ -54,13 +69,42 @@ class LidarDataList:
 				sample_distances.append(it[0])
 				sample_speeds.append(it[1])
 
-			self.data_mean[_ang].update(
+			self.filtering_data[_ang].update(
 				int(np.median(sample_distances)), 
 				int(np.median(sample_speeds))
 			)
 
 			self.clear(_ang)
 
+
+	def moving_average_filter(self, _ang: int) -> None:
+		if len(self.data[_ang]) == 2:
+
+			ema_distance = self.alpha*self.data[_ang][1][0] + (1 - self.alpha)*self.filtering_data[_ang].distance
+			ema_speed = self.alpha*self.data[_ang][1][1] + (1 - self.alpha)*self.filtering_data[_ang].speed
+
+			self.filtering_data[_ang].update(
+				ema_distance,
+				ema_speed
+			)
+
+			self.clear(_ang)
+
+
+	def kalman_filter(self, _ang: int) -> None:
+		pass
+
+
+	def none_filter(self, _ang: int) -> None:
+		self.filtering_data[_ang].update(
+			self.data[_ang][-1][0], 
+			self.data[_ang][-1][1]
+		)
+
+		if len(self.data[_ang]) >= 20:
+			self.clear(_ang)
+
+	
 	def clear(self, _ang: int) -> None:
 		self.data[_ang].clear()
 
@@ -75,6 +119,7 @@ class Lidar:
 		self.BAUDRATE = _baudrate
 		self.data = LidarDataList()
 
+	
 	def connect_serial(self) -> None:
 		try:
 			if self.ser is None or not self.ser.is_open:
@@ -92,6 +137,7 @@ class Lidar:
 			time.sleep(5)
 			self.connect_serial()
 
+	
 	def read_serial(self) -> None:
 		try:
 			self.connect_serial()
@@ -114,54 +160,12 @@ class Lidar:
 
 			exit('Programs close')
 
+
 	def clear_data(self):
 		self.data.clear()
 
 
-class Visualization:
-	"""Visualization: lidar data visualization class"""
-	def __init__(self):
-		self.MAX_DISTANCE = 3000    # in mm
-		self.MIN_DISTANCE = 100     # in mm
-		self.fig = plt.figure(dpi=200)
-		self.ax = self.fig.add_subplot(projection='polar')
+	def __del__(self):
+		if not(self.ser is None) and self.ser.is_open:
+			self.ser.close()
 
-	def plot_lidar_data(self, _data: list):
-		angles = np.deg2rad([it.angle for it in _data])
-		distances = np.array([it.distance for it in _data])
-
-		self.ax.clear() # clear current plot
-		plt.plot(angles, distances, ".")
-		self.ax.set_rmax(self.MAX_DISTANCE)
-		plt.draw()
-		plt.pause(0.001)
-
-
-def choice_port() -> str:
-	ports = list_ports.comports()
-
-	if len(ports) < 1:
-		exit('No ports')
-
-	for i, p in enumerate(ports):
-		print(f'{i+1}. {p}')
-
-	choice = input('Enter port name: ')
-
-	return choice
-
-
-
-if __name__ == '__main__':
-	port = choice_port()
-
-	lidar = Lidar(port, 115200)
-	vis = Visualization()
-
-	while True:
-		try:
-			lidar.read_serial()
-			vis.plot_lidar_data(lidar.data.data_mean)
-			# lidar.clear_data()
-		except KeyboardInterrupt:
-			exit('Exit: ctrl + C')
